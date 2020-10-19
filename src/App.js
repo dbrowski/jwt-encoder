@@ -362,6 +362,7 @@ export default function App() {
                   autoFocus
                   rowsMax={10}
                   multiline
+                  style={{ paddingBottom: "1rem" }}
                 />
               </Grid>
             </Grid>
