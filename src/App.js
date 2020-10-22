@@ -79,20 +79,22 @@ export default function App() {
   const classes = useStyles();
 
   const reader = new FileReader();
-  const initialHeader = JSON.stringify({ alg: "RS256" });
-  const initialPayload = JSON.stringify({ body: "here" });
+  const initialHeader = JSON.stringify({ alg: "RS256", cty: "JWT" });
+  const initialPayload = JSON.stringify({ sub: "1234567890", iat: 1603376011 });
   const initialPrivateKey =
     "-----BEGIN RSA PRIVATE KEY-----\n\n-----END RSA PRIVATE KEY-----";
+  const initialPassphrase = "aaaa";
 
   // State variables and setters.
   const [jot, setJot] = useState("");
   const [header, setHeader] = useState(initialHeader);
   const [payload, setPayload] = useState(initialPayload);
   const [privateKey, setPrivateKey] = useState(initialPrivateKey);
+  const [passphrase, setPassphrase] = useState(initialPassphrase);
   const [decodedJot, setDecodedJot] = useState("");
   const [anchorEl, setAnchorEl] = React.useState(null);
   const [jotError, setJotError] = React.useState(null);
-  const [rs256, setRS256] = useState(false);
+  const [rs256, setRS256] = useState(true);
   const [hs256, setHS256] = useState(false);
   const [key, setKey] = useState("");
   const [verifiedSignature, setVerifiedSignature] = useState(false);
@@ -120,24 +122,82 @@ export default function App() {
   };
 
   const encode = () => {
-    const base64Header = base64url.encode(header);
-    const base64Payload = base64url.encode(payload);
+    if (!rs256 && !hs256) {
+      const msg = "Only RS256 and HS256 are currently supported.";
+      console.error(msg);
+      setJotError(msg);
+    }
 
-    const RSA = rs.KEYUTIL.getKey(privateKey);
-    const jwt = rs.jws.JWS.sign("RS256", header, payload, RSA);
-    // const sig = rs.jws.JWS.sign("RS256", {alg: "Rs256"}, payload, privateKey);
-    console.log(jwt);
-    setJot(jwt);
+    if (rs256) {
+      const RSA = rs.KEYUTIL.getKey(privateKey);
+      const jwt = rs.jws.JWS.sign("RS256", header, payload, RSA);
+
+      console.log(jwt);
+      setJot(jwt);
+    } else if (hs256) {
+      console.log("passphrase");
+      console.log(passphrase);
+
+      const encoded = new Buffer(passphrase).toString("hex");
+      console.log("encoded");
+      console.log(encoded);
+
+      const jwt = rs.jws.JWS.sign("HS256", header, payload, encoded);
+      console.log("jwt");
+      console.log(jwt);
+      setJot(jwt);
+    }
   };
 
   const handleHeaderChange = (event) => {
     event.preventDefault();
-    setHeader(event.target.value);
+    const hdr = event.target.value;
+    if (hdr) {
+      const jsonHeader = rs.jws.JWS.readSafeJSONString(hdr);
+      const alg = jsonHeader.alg;
+
+      if (jsonHeader) {
+        setHeader(JSON.stringify(jsonHeader));
+      } else {
+        const msg = "Please format header in JSON format.";
+        console.error(msg);
+        setJotError(msg);
+        setAnchorEl(event.currentTarget);
+      }
+
+      if (alg) {
+        if (alg === "RS256") {
+          setRS256(true);
+          setHS256(false);
+        } else if (alg === "HS256") {
+          setHS256(true);
+          setRS256(false);
+        } else {
+          setRS256(false);
+          setHS256(false);
+        }
+      } else {
+        const msg = 'Please include an alg element, eg, "alg": "RS256".';
+        console.error(msg);
+        setJotError(msg);
+        setAnchorEl(event.currentTarget);
+      }
+    }
   };
 
   const handlePayloadChange = (event) => {
     event.preventDefault();
-    setPayload(event.target.value);
+    if (event.target.value) {
+      let pld = rs.jws.JWS.readSafeJSONString(event.target.value);
+      if (pld) {
+        setPayload(JSON.stringify(pld));
+      } else {
+        const msg = "Please format payload in JSON format.";
+        console.error(msg);
+        setJotError(msg);
+        setAnchorEl(event.currentTarget);
+      }
+    }
   };
 
   const handlePrivateKeyChange = (event) => {
@@ -145,66 +205,13 @@ export default function App() {
     setPrivateKey(event.target.value);
   };
 
-  const handleKeyChange = (event) => {
+  const handlePassphraseChange = (event) => {
     event.preventDefault();
-    setKey(event.target.value);
+    setPassphrase(event.target.value);
   };
 
   const handleClose = () => {
     setAnchorEl(null);
-  };
-
-  const handleValidateJWT = (event) => {
-    event.preventDefault();
-    try {
-      decryptJWS(event);
-    } catch (e) {
-      setVerifiedSignature(false);
-      // Gets the reason for failure.
-      let msg = "";
-      if (e.message) {
-        msg = e.message.split(". ")[1] || e.message.split(". ")[0];
-        console.error(msg);
-      } else {
-        msg = e;
-      }
-      setJotError(msg);
-      setAnchorEl(event.currentTarget);
-    }
-  };
-
-  const decryptJWS = (event) => {
-    if (key) {
-      const JWS = rs.jws.JWS;
-      if (rs256) {
-        const BEGIN_CERTIFICATE = "-----BEGIN CERTIFICATE-----";
-        const END_CERTIFICATE = "-----END CERTIFICATE-----";
-        let pemString = key;
-
-        if (!pemString.startsWith(BEGIN_CERTIFICATE)) {
-          pemString = BEGIN_CERTIFICATE + "\n" + pemString;
-        }
-
-        if (!pemString.endsWith(END_CERTIFICATE)) {
-          pemString = pemString + "\n" + END_CERTIFICATE;
-        }
-
-        const rsaKey = rs.KEYUTIL.getKey(pemString);
-        const isValid = JWS.verify(jot, rsaKey, ["RS256"]);
-        setVerifiedSignature(isValid);
-      }
-
-      if (hs256) {
-        const isValid = JWS.verify(jot, key, ["HS256"]);
-        setVerifiedSignature(isValid);
-      }
-    } else {
-      let msg = "Need a key to try to verify the JWT.";
-      setJotError(msg);
-      setAnchorEl(event.currentTarget);
-      setVerifiedSignature(false);
-      console.log("Need key.");
-    }
   };
 
   return (
@@ -273,7 +280,7 @@ export default function App() {
                 <JSONPretty
                   data={header}
                   theme={monikai}
-                  style={{ paddingBottom: "1rem" }}
+                  style={{ paddingBottom: "2rem" }}
                 />
 
                 {/* Error Message for JWT String Decode */}
@@ -307,7 +314,6 @@ export default function App() {
                   label="JWT-Payload"
                   name="JWT-Payload"
                   value={payload}
-                  autoFocus
                   rowsMax={4}
                   multiline
                   onChange={handlePayloadChange}
@@ -315,27 +321,51 @@ export default function App() {
                 <JSONPretty
                   data={payload}
                   theme={JSONPretty1337}
-                  style={{ paddingBottom: "1rem" }}
+                  style={{ paddingBottom: "2rem" }}
                 />
               </Grid>
-
-              <Grid item xs={12} style={{ flex: "10 0 auto" }}>
-                {/* JWT header input field */}
-                <TextField
-                  variant="outlined"
-                  margin="none"
-                  required
-                  fullWidth
-                  id="privateKey"
-                  label="Private-Key"
-                  name="Private-Key"
-                  value={privateKey}
-                  autoFocus
-                  rowsMax={4}
-                  multiline
-                  onChange={handlePrivateKeyChange}
-                />
-              </Grid>
+              {rs256 ? (
+                <Grid item xs={12} style={{ flex: "10 0 auto" }}>
+                  {/* JWT header input field */}
+                  <TextField
+                    variant="outlined"
+                    margin="none"
+                    required
+                    fullWidth
+                    id="rsPrivateKey"
+                    label="RSA-Private-Key"
+                    name="RSA-Private-Key"
+                    value={privateKey}
+                    rowsMax={4}
+                    multiline
+                    onChange={handlePrivateKeyChange}
+                    style={{ paddingBottom: "1rem" }}
+                  />
+                </Grid>
+              ) : (
+                <></>
+              )}
+              {hs256 ? (
+                <Grid item xs={12} style={{ flex: "10 0 auto" }}>
+                  {/* JWT header input field */}
+                  <TextField
+                    variant="outlined"
+                    margin="none"
+                    required
+                    fullWidth
+                    id="hsPassphrase"
+                    label="HS-Passphrase"
+                    name="HS-Passphrase"
+                    value={passphrase}
+                    rowsMax={4}
+                    multiline
+                    onChange={handlePassphraseChange}
+                    style={{ paddingBottom: "1rem" }}
+                  />
+                </Grid>
+              ) : (
+                <></>
+              )}
 
               <Grid item xs={12} style={{ flex: "1 0 auto" }}>
                 <Button
@@ -353,16 +383,15 @@ export default function App() {
                 <TextField
                   variant="outlined"
                   margin="none"
-                  required
                   fullWidth
                   id="jwt"
                   label="JWT"
                   name="JWT"
                   value={jot}
-                  autoFocus
+                  rows={10}
                   rowsMax={10}
                   multiline
-                  style={{ paddingBottom: "1rem" }}
+                  style={{ paddingBottom: "2rem" }}
                 />
               </Grid>
             </Grid>
