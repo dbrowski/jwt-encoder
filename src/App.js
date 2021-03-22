@@ -1,24 +1,17 @@
 import React, { useState } from "react";
 import Avatar from "@material-ui/core/Avatar";
 import Button from "@material-ui/core/Button";
-import CssBaseline from "@material-ui/core/CssBaseline";
 import TextField from "@material-ui/core/TextField";
 import Paper from "@material-ui/core/Paper";
-import Box from "@material-ui/core/Box";
 import Grid from "@material-ui/core/Grid";
 import Popover from "@material-ui/core/Popover";
 import Typography from "@material-ui/core/Typography";
-import CheckIcon from "@material-ui/icons/Check";
 import LockOpenIcon from "@material-ui/icons/LockOpen";
 import { makeStyles } from "@material-ui/core/styles";
 import JSONPretty from "react-json-pretty";
-import JSONPrettyMon from "./App.css";
 import * as rs from "jsrsasign";
-import base64url from "base64url";
 import monikai from "react-json-pretty/dist/monikai";
 import JSONPretty1337 from "react-json-pretty/dist/1337";
-import JSONPrettyAcai from "react-json-pretty/dist/acai";
-import JSONPrettyAdv from "react-json-pretty/dist/adventure_time";
 
 const useStyles = makeStyles((theme) => ({
   root: {
@@ -78,7 +71,6 @@ export default function App() {
   // Use the above styles.
   const classes = useStyles();
 
-  const reader = new FileReader();
   const initialHeader = JSON.stringify({ alg: "RS256", cty: "JWT" });
   const initialPayload = JSON.stringify({ sub: "1234567890", iat: 1603376011 });
   const initialPrivateKey =
@@ -88,19 +80,19 @@ export default function App() {
   // State variables and setters.
   const [jot, setJot] = useState("");
   const [header, setHeader] = useState(initialHeader);
+  const [jsonHeader, setJSONHeader] = useState(initialHeader);
   const [payload, setPayload] = useState(initialPayload);
+  const [jsonPayload, setJSONPayload] = useState(initialPayload);
   const [privateKey, setPrivateKey] = useState(initialPrivateKey);
   const [passphrase, setPassphrase] = useState(initialPassphrase);
-  const [decodedJot, setDecodedJot] = useState("");
   const [anchorEl, setAnchorEl] = React.useState(null);
   const [jotError, setJotError] = React.useState(null);
   const [rs256, setRS256] = useState(true);
   const [hs256, setHS256] = useState(false);
-  const [key, setKey] = useState("");
-  const [verifiedSignature, setVerifiedSignature] = useState(false);
 
   const open = Boolean(anchorEl);
   const id = open ? "popover" : undefined;
+  const btnRef = React.createRef();
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -126,11 +118,40 @@ export default function App() {
       const msg = "Only RS256 and HS256 are currently supported.";
       console.error(msg);
       setJotError(msg);
+      setAnchorEl(btnRef.current);
+      return;
+    }
+    if (!checkJSONFormat(payload)) {
+      const msg = "Please format the payload in JSON format.";
+      console.error(msg);
+      setJotError(msg);
+      setAnchorEl(btnRef.current);
+      return;
+    } else {
+      setJSONPayload(parseJSON(payload));
+    }
+
+    if (!checkJSONFormat(header)) {
+      const msg = "Please format the header in JSON format.";
+      console.error(msg);
+      setJotError(msg);
+      setAnchorEl(btnRef.current);
+      return;
+    } else {
+      setJSONHeader(parseJSON(header));
+    }
+
+    if (!checkAlgorithm(jsonHeader.alg)) {
+      const msg = 'Please use an appropriate "alg" like HS256 or RS256.';
+      console.error(msg);
+      setJotError(msg);
+      setAnchorEl(btnRef.current);
+      return;
     }
 
     if (rs256) {
       const RSA = rs.KEYUTIL.getKey(privateKey);
-      const jwt = rs.jws.JWS.sign("RS256", header, payload, RSA);
+      const jwt = rs.jws.JWS.sign("RS256", jsonHeader, jsonPayload, RSA);
 
       console.log(jwt);
       setJot(jwt);
@@ -142,62 +163,56 @@ export default function App() {
       console.log("encoded");
       console.log(encoded);
 
-      const jwt = rs.jws.JWS.sign("HS256", header, payload, encoded);
+      const jwt = rs.jws.JWS.sign("HS256", jsonHeader, jsonPayload, encoded);
       console.log("jwt");
       console.log(jwt);
       setJot(jwt);
     }
   };
 
+  const parseJSON = (s) => {
+    return rs.jws.JWS.readSafeJSONString(s);
+  };
+
+  const checkJSONFormat = (s) => {
+    let pld = parseJSON(s);
+    if (!pld) {
+      const msg = "Please use JSON format.";
+      console.error(msg);
+      setJotError(msg);
+      setAnchorEl(btnRef.current);
+      return false;
+    } else {
+      return true;
+    }
+  };
+
+  const checkAlgorithm = (alg) => {
+    if (alg) {
+      if (alg === "RS256") {
+        setRS256(true);
+        setHS256(false);
+      } else if (alg === "HS256") {
+        setHS256(true);
+        setRS256(false);
+      } else {
+        setRS256(false);
+        setHS256(false);
+        return false;
+      }
+      return true;
+    }
+    return false;
+  };
+
   const handleHeaderChange = (event) => {
     event.preventDefault();
-    const hdr = event.target.value;
-    if (hdr) {
-      const jsonHeader = rs.jws.JWS.readSafeJSONString(hdr);
-      const alg = jsonHeader.alg;
-
-      if (jsonHeader) {
-        setHeader(JSON.stringify(jsonHeader));
-      } else {
-        const msg = "Please format header in JSON format.";
-        console.error(msg);
-        setJotError(msg);
-        setAnchorEl(event.currentTarget);
-      }
-
-      if (alg) {
-        if (alg === "RS256") {
-          setRS256(true);
-          setHS256(false);
-        } else if (alg === "HS256") {
-          setHS256(true);
-          setRS256(false);
-        } else {
-          setRS256(false);
-          setHS256(false);
-        }
-      } else {
-        const msg = 'Please include an alg element, eg, "alg": "RS256".';
-        console.error(msg);
-        setJotError(msg);
-        setAnchorEl(event.currentTarget);
-      }
-    }
+    setHeader(event.target.value);
   };
 
   const handlePayloadChange = (event) => {
     event.preventDefault();
-    if (event.target.value) {
-      let pld = rs.jws.JWS.readSafeJSONString(event.target.value);
-      if (pld) {
-        setPayload(JSON.stringify(pld));
-      } else {
-        const msg = "Please format payload in JSON format.";
-        console.error(msg);
-        setJotError(msg);
-        setAnchorEl(event.currentTarget);
-      }
-    }
+    setPayload(event.target.value);
   };
 
   const handlePrivateKeyChange = (event) => {
@@ -372,6 +387,7 @@ export default function App() {
                   variant="contained"
                   color="primary"
                   className={classes.submit}
+                  ref={btnRef}
                 >
                   Encode
                 </Button>
