@@ -114,6 +114,8 @@ export default function App() {
   };
 
   const encode = () => {
+    let jsonH;
+    let jsonP;
     if (!rs256 && !hs256) {
       const msg = "Only RS256 and HS256 are currently supported.";
       console.error(msg);
@@ -129,6 +131,7 @@ export default function App() {
       return;
     } else {
       setJSONPayload(parseJSON(payload));
+      jsonP = parseJSON(payload);
     }
 
     if (!checkJSONFormat(header)) {
@@ -139,9 +142,10 @@ export default function App() {
       return;
     } else {
       setJSONHeader(parseJSON(header));
+      jsonH = parseJSON(header);
     }
 
-    if (!checkAlgorithm(jsonHeader.alg)) {
+    if (!checkAlgorithm(jsonH.alg)) {
       const msg = 'Please use an appropriate "alg" like HS256 or RS256.';
       console.error(msg);
       setJotError(msg);
@@ -151,21 +155,12 @@ export default function App() {
 
     if (rs256) {
       const RSA = rs.KEYUTIL.getKey(privateKey);
-      const jwt = rs.jws.JWS.sign("RS256", jsonHeader, jsonPayload, RSA);
-
-      console.log(jwt);
+      const jwt = rs.jws.JWS.sign("RS256", jsonH, jsonP, RSA);
       setJot(jwt);
     } else if (hs256) {
-      console.log("passphrase");
-      console.log(passphrase);
-
-      const encoded = new Buffer(passphrase).toString("hex");
-      console.log("encoded");
-      console.log(encoded);
-
-      const jwt = rs.jws.JWS.sign("HS256", jsonHeader, jsonPayload, encoded);
-      console.log("jwt");
-      console.log(jwt);
+      const buff = Buffer.isBuffer(Buffer.from(passphrase));
+      const encoded = buff.toString("hex");
+      const jwt = rs.jws.JWS.sign("HS256", jsonH, jsonP, encoded);
       setJot(jwt);
     }
   };
